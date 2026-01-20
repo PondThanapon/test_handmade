@@ -51,9 +51,6 @@ tcp_sock.bind((TCP_IP, TCP_PORT))
 tcp_sock.listen(1)
 
 print("Waiting for Unity camera stream...")
-conn, addr = tcp_sock.accept()
-print("Connected from", addr)
-
 print(f"Listening TCP on {TCP_IP}:{TCP_PORT}")
 print(f"Sending UDP to {UDP_IP}:{UDP_PORT}")
 
@@ -81,58 +78,102 @@ def recv_all(sock, size):
 
 last_debug_log = 0.0
 frames_sent = 0
+frames_with_any_hand = 0
+frames_with_handedness = 0
 
 while True:
-    raw_len = recv_all(conn, 4)
-    if not raw_len:
-        break
+    conn, addr = tcp_sock.accept()
+    print("Connected from", addr)
 
-    frame_len = struct.unpack("<I", raw_len)[0]
+    try:
+        while True:
+            raw_len = recv_all(conn, 4)
+            if not raw_len:
+                if DEBUG:
+                    print("TCP closed by Unity; waiting for reconnect...")
+                break
 
-    jpg_data = recv_all(conn, frame_len)
-    if jpg_data is None:
-        break
+            frame_len = struct.unpack("<I", raw_len)[0]
 
-    frame = cv2.imdecode(np.frombuffer(jpg_data, np.uint8), cv2.IMREAD_COLOR)
-    if frame is None:
-        continue
+            jpg_data = recv_all(conn, frame_len)
+            if jpg_data is None:
+                if DEBUG:
+                    print("TCP stream ended mid-frame; waiting for reconnect...")
+                break
 
-    h, w, _ = frame.shape
+            frame = cv2.imdecode(
+                np.frombuffer(jpg_data, np.uint8),
+                cv2.IMREAD_COLOR,
+            )
+            if frame is None:
+                continue
 
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = hands.process(rgb)
+            h, w, _ = frame.shape
 
-    left = None
-    right = None
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = hands.process(rgb)
 
-    if results.multi_hand_landmarks and results.multi_handedness:
-        for i, hand in enumerate(results.multi_hand_landmarks):
-            handed = results.multi_handedness[i].classification[0].label
+            if results.multi_hand_landmarks:
+                frames_with_any_hand += 1
+            if results.multi_handedness:
+                frames_with_handedness += 1
 
-            index_tip = hand.landmark[8]
-            pinch = calc_pinch(hand)
+            left = None
+            right = None
 
-            data = {
-                "x": int(index_tip.x * w),
-                "y": int(index_tip.y * h),
-                "pinch": round(pinch, 3),
-            }
+            if results.multi_hand_landmarks and results.multi_handedness:
+                for i, hand in enumerate(results.multi_hand_landmarks):
+                    handed = results.multi_handedness[i].classification[0].label
 
-            if handed == "Left":
-                left = data
-            else:
-                right = data
+                    index_tip = hand.landmark[8]
+                    pinch = calc_pinch(hand)
 
-    packet = {"left": left, "right": right}
-    udp_sock.sendto(json.dumps(packet).encode("utf-8"), (UDP_IP, UDP_PORT))
+                    data = {
+                        "x": int(index_tip.x * w),
+                        "y": int(index_tip.y * h),
+                        "pinch": round(pinch, 3),
+                    }
 
-    if DEBUG:
-        frames_sent += 1
-        now = time.time()
-        if now - last_debug_log >= 1.0:
-            print(f"UDP sent {frames_sent} frames to {UDP_IP}:{UDP_PORT}")
-            last_debug_log = now
+                    if handed == "Left":
+                        left = data
+                    else:
+                        right = data
 
-conn.close()
+            packet = {"left": left, "right": right}
+            udp_sock.sendto(json.dumps(packet).encode("utf-8"), (UDP_IP, UDP_PORT))
+
+            if DEBUG:
+                frames_sent += 1
+                now = time.time()
+                if now - last_debug_log >= 1.0:
+                    hands_count = (
+                        len(results.multi_hand_landmarks)
+                        if results.multi_hand_landmarks
+                        else 0
+                    )
+                    labels = (
+                        [h.classification[0].label for h in results.multi_handedness]
+                        if results.multi_handedness
+                        else []
+                    )
+                    print(
+                        " | ".join(
+                            [
+                                f"UDP sent={frames_sent} to {UDP_IP}:{UDP_PORT}",
+                                f"hands={hands_count}",
+                                f"labels={labels}",
+                                f"seen_any={frames_with_any_hand}",
+                                f"seen_handedness={frames_with_handedness}",
+                                f"packet={packet}",
+                            ]
+                        )
+                    )
+                    last_debug_log = now
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 tcp_sock.close()
 udp_sock.close()
