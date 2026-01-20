@@ -21,6 +21,16 @@ test
 docker compose up --build
 ```
 
+### กรณี Unity รันคนละเครื่อง (ต้องระบุ IP ตอนสั่งรัน)
+```bash
+UNITY_IP=192.168.1.50 docker compose up --build
+```
+
+ถ้าต้องการเปลี่ยนพอร์ต UDP (ค่า default 5052):
+```bash
+UNITY_IP=192.168.1.50 UNITY_UDP_PORT=5052 docker compose up --build
+```
+
 ### 2) ตั้งค่า Unity ให้ชี้มาที่ Docker
 - Unity ส่งภาพ (TCP) ไปที่ `127.0.0.1:5055` (port นี้ถูก publish เข้า container)
 - Unity รับค่าตำแหน่งมือ (UDP) ที่ `0.0.0.0:5052` หรือ `127.0.0.1:5052` บนเครื่อง host
