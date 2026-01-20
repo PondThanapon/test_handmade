@@ -3,6 +3,7 @@ import mediapipe as mp
 import numpy as np
 import socket
 import struct
+import os
 
 # -----------------------------
 # MediaPipe Hands
@@ -19,7 +20,11 @@ hands = mp_hands.Hands(
 # -----------------------------
 # รับภาพจาก Unity (TCP)
 sockImg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sockImg.bind(("127.0.0.1", 5055))
+
+IMG_BIND_HOST = os.getenv("IMG_BIND_HOST", "0.0.0.0")
+IMG_BIND_PORT = int(os.getenv("IMG_BIND_PORT", "5055"))
+
+sockImg.bind((IMG_BIND_HOST, IMG_BIND_PORT))
 sockImg.listen(1)
 
 print("Waiting for Unity...")
@@ -28,7 +33,12 @@ print("Connected:", addr)
 
 # ส่งข้อมูลตำแหน่งมือกลับไป Unity (UDP)
 sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-unity_target = ("127.0.0.1", 5052)
+UNITY_HOST = os.getenv("UNITY_HOST", "host.docker.internal")
+UNITY_PORT = int(os.getenv("UNITY_PORT", "5052"))
+unity_target = (UNITY_HOST, UNITY_PORT)
+
+print(f"Listening TCP on {IMG_BIND_HOST}:{IMG_BIND_PORT}")
+print(f"Sending UDP to {UNITY_HOST}:{UNITY_PORT}")
 
 # -----------------------------
 # Loop
@@ -40,12 +50,23 @@ while True:
     if not length_data:
         break
 
+    if len(length_data) < 4:
+        # Incomplete header; connection likely closed.
+        break
+
     length = struct.unpack("I", length_data)[0]
 
     # รับข้อมูลภาพจริง
     image_data = b""
     while len(image_data) < length:
-        image_data += client_socket.recv(length - len(image_data))
+        chunk = client_socket.recv(length - len(image_data))
+        if not chunk:
+            image_data = b""
+            break
+        image_data += chunk
+
+    if not image_data:
+        break
 
     np_arr = np.frombuffer(image_data, np.uint8)
     frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)

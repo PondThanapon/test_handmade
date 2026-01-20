@@ -1,0 +1,15 @@
+services:
+  hand-tracker:
+    build: .
+    container_name: hand-tracker
+    environment:
+      # Listen for Unity TCP stream
+      IMG_BIND_HOST: 0.0.0.0
+      IMG_BIND_PORT: 5055
+      # Send UDP result back to Unity running on the host
+      UNITY_HOST: host.docker.internal
+      UNITY_PORT: 5052
+    ports:
+      - "5055:5055"  # TCP from Unity -> container
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
