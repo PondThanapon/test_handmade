@@ -6,8 +6,11 @@ services:
       # Listen for Unity TCP stream
       IMG_BIND_HOST: 0.0.0.0
       IMG_BIND_PORT: 5055
-      # Send UDP result back to Unity running on the host
-      UNITY_HOST: host.docker.internal
+      # Send UDP result back to Unity (running on another machine)
+      UDP_IP: 172.17.6.162
+      UDP_PORT: 5052
+      # (Optional legacy envs)
+      UNITY_HOST: 172.17.6.162
       UNITY_PORT: 5052
     ports:
       - "5055:5055"  # TCP from Unity -> container
