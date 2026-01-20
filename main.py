@@ -25,7 +25,10 @@ except Exception:
 TCP_IP = os.getenv("IMG_BIND_HOST", "0.0.0.0")
 TCP_PORT = int(os.getenv("IMG_BIND_PORT", "5055"))
 
-UDP_IP = os.getenv("UDP_IP", os.getenv("UNITY_HOST", "127.0.0.1"))
+_udp_ip_env = os.getenv("UDP_IP", os.getenv("UNITY_HOST", ""))
+UDP_IP = _udp_ip_env.strip()
+if UDP_IP.lower() in {"", "auto"}:
+    UDP_IP = ""
 UDP_PORT = int(os.getenv("UDP_PORT", os.getenv("UNITY_PORT", "5052")))
 
 MAX_HANDS = int(os.getenv("MAX_HANDS", "2"))
@@ -53,7 +56,10 @@ tcp_sock.listen(1)
 
 print("Waiting for Unity camera stream...")
 print(f"Listening TCP on {TCP_IP}:{TCP_PORT}")
-print(f"Sending UDP to {UDP_IP}:{UDP_PORT}")
+if UDP_IP:
+    print(f"Sending UDP to {UDP_IP}:{UDP_PORT}")
+else:
+    print(f"UDP target IP: auto (use TCP peer) | port={UDP_PORT}")
 
 
 def distance(a, b):
@@ -85,6 +91,11 @@ frames_with_handedness = 0
 while True:
     conn, addr = tcp_sock.accept()
     print("Connected from", addr)
+
+    udp_target_ip = UDP_IP or addr[0]
+    udp_target = (udp_target_ip, UDP_PORT)
+    if DEBUG:
+        print(f"UDP target resolved to {udp_target_ip}:{UDP_PORT}")
 
     try:
         while True:
@@ -144,7 +155,7 @@ while True:
             payload = json.dumps(packet)
             if UDP_APPEND_NEWLINE:
                 payload += "\n"
-            udp_sock.sendto(payload.encode("utf-8"), (UDP_IP, UDP_PORT))
+            udp_sock.sendto(payload.encode("utf-8"), udp_target)
 
             if DEBUG:
                 frames_sent += 1
@@ -163,7 +174,7 @@ while True:
                     print(
                         " | ".join(
                             [
-                                f"UDP sent={frames_sent} to {UDP_IP}:{UDP_PORT}",
+                                f"UDP sent={frames_sent} to {udp_target_ip}:{UDP_PORT}",
                                 f"hands={hands_count}",
                                 f"labels={labels}",
                                 f"seen_any={frames_with_any_hand}",

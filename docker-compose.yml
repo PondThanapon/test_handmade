@@ -6,12 +6,14 @@ services:
       # Listen for Unity TCP stream
       IMG_BIND_HOST: 0.0.0.0
       IMG_BIND_PORT: 5055
-      # Send UDP result back to Unity (set UNITY_IP when running docker compose)
-      # Example: UNITY_IP=192.168.1.50 docker compose up --build
-      UDP_IP: ${UNITY_IP}
+      # Send UDP result back to Unity.
+      # - If UNITY_IP is set: use that IP.
+      # - If UNITY_IP is empty/unset: auto-detect from Unity TCP connection source IP.
+      # Example (fixed IP): UNITY_IP=192.168.1.50 docker compose up --build
+      UDP_IP: ${UNITY_IP:-auto}
       UDP_PORT: ${UNITY_UDP_PORT:-5052}
       # (Optional legacy envs)
-      UNITY_HOST: ${UNITY_IP}
+      UNITY_HOST: ${UNITY_IP:-auto}
       UNITY_PORT: ${UNITY_UDP_PORT:-5052}
     ports:
       - "5055:5055"  # TCP from Unity -> container
