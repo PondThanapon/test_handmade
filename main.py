@@ -30,6 +30,7 @@ UDP_PORT = int(os.getenv("UDP_PORT", os.getenv("UNITY_PORT", "5052")))
 
 MAX_HANDS = int(os.getenv("MAX_HANDS", "2"))
 DEBUG = os.getenv("DEBUG", "0") == "1"
+UDP_APPEND_NEWLINE = os.getenv("UDP_APPEND_NEWLINE", "0") == "1"
 
 
 # -----------------------------
@@ -140,7 +141,10 @@ while True:
                         right = data
 
             packet = {"left": left, "right": right}
-            udp_sock.sendto(json.dumps(packet).encode("utf-8"), (UDP_IP, UDP_PORT))
+            payload = json.dumps(packet)
+            if UDP_APPEND_NEWLINE:
+                payload += "\n"
+            udp_sock.sendto(payload.encode("utf-8"), (UDP_IP, UDP_PORT))
 
             if DEBUG:
                 frames_sent += 1
