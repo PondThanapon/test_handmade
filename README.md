@@ -1,3 +1,4 @@
+test
 # AI ตรวจสอบการเล่นเงาสำหรับ Unity
 ## โดยใช้โมเดล Mediapipe, YOLO V11
 
