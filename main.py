@@ -1,20 +1,35 @@
+import os
+
+# Reduce noisy MediaPipe/TF native logs (glog). This must run before importing mediapipe.
+os.environ.setdefault("GLOG_minloglevel", "2")  # 0=INFO,1=WARNING,2=ERROR,3=FATAL
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+
 import cv2
 import json
 import math
-import os
+import time
 import socket
 import struct
 
 import mediapipe as mp
 import numpy as np
 
+try:
+    from absl import logging as absl_logging
+
+    absl_logging.set_verbosity(absl_logging.ERROR)
+    absl_logging.set_stderrthreshold("error")
+except Exception:
+    pass
+
 TCP_IP = os.getenv("IMG_BIND_HOST", "0.0.0.0")
-TCP_PORT = int(os.getenv("IMG_BIND_PORT", "5058"))
+TCP_PORT = int(os.getenv("IMG_BIND_PORT", "5055"))
 
 UDP_IP = os.getenv("UDP_IP", os.getenv("UNITY_HOST", "127.0.0.1"))
 UDP_PORT = int(os.getenv("UDP_PORT", os.getenv("UNITY_PORT", "5052")))
 
 MAX_HANDS = int(os.getenv("MAX_HANDS", "2"))
+DEBUG = os.getenv("DEBUG", "0") == "1"
 
 
 # -----------------------------
@@ -31,6 +46,7 @@ hands = mp_hands.Hands(
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 tcp_sock.bind((TCP_IP, TCP_PORT))
 tcp_sock.listen(1)
 
@@ -61,6 +77,10 @@ def recv_all(sock, size):
             return None
         data += packet
     return data
+
+
+last_debug_log = 0.0
+frames_sent = 0
 
 while True:
     raw_len = recv_all(conn, 4)
@@ -105,6 +125,13 @@ while True:
 
     packet = {"left": left, "right": right}
     udp_sock.sendto(json.dumps(packet).encode("utf-8"), (UDP_IP, UDP_PORT))
+
+    if DEBUG:
+        frames_sent += 1
+        now = time.time()
+        if now - last_debug_log >= 1.0:
+            print(f"UDP sent {frames_sent} frames to {UDP_IP}:{UDP_PORT}")
+            last_debug_log = now
 
 conn.close()
 tcp_sock.close()
