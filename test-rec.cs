@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System;
 
 // Receives UDP JSON packets from Python hand-tracker.
 // Notes:
@@ -13,6 +14,18 @@ using System.Threading;
 public class HandUDPReceiver : MonoBehaviour
 {
     public int listenPort = 5052;
+
+    public enum ReceiveMode
+    {
+        UDP,
+        TCPViaHandTcpCameraStreamer,
+    }
+
+    [Header("Mode")]
+    public ReceiveMode receiveMode = ReceiveMode.UDP;
+
+    [Tooltip("Assign the component that receives TCP hand JSON (e.g. HandTcpCameraStreamer).")]
+    public HandTcpCameraStreamer tcpSource;
 
     UdpClient udp;
     Thread thread;
@@ -42,11 +55,20 @@ public class HandUDPReceiver : MonoBehaviour
 
     void Start()
     {
+        if (receiveMode == ReceiveMode.TCPViaHandTcpCameraStreamer)
+        {
+            Debug.Log("HandUDPReceiver running in TCP adapter mode");
+            return;
+        }
+
         try
         {
-            udp = new UdpClient(listenPort);
+            // Bind explicitly to IPv4 to avoid IPv6-only binding issues on some platforms.
+            udp = new UdpClient(AddressFamily.InterNetwork);
+            udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            udp.Client.Bind(new IPEndPoint(IPAddress.Any, listenPort));
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Debug.LogError($"HandUDPReceiver failed to bind UDP port {listenPort}: {ex.Message}");
             enabled = false;
@@ -83,7 +105,7 @@ public class HandUDPReceiver : MonoBehaviour
                 // Usually thrown when udp is closed.
                 break;
             }
-            catch (System.Exception)
+            catch (Exception)
             {
                 // Keep receiver alive on transient errors.
             }
@@ -92,18 +114,52 @@ public class HandUDPReceiver : MonoBehaviour
 
     void Update()
     {
+        if (receiveMode == ReceiveMode.TCPViaHandTcpCameraStreamer)
+        {
+            if (tcpSource == null)
+                return;
+
+            // Copy values from TCP source into this component's HandData type.
+            if (tcpSource.left != null)
+            {
+                left = new HandData { x = tcpSource.left.x, y = tcpSource.left.y, pinch = tcpSource.left.pinch };
+            }
+            else
+            {
+                left = null;
+            }
+
+            if (tcpSource.right != null)
+            {
+                right = new HandData { x = tcpSource.right.x, y = tcpSource.right.y, pinch = tcpSource.right.pinch };
+            }
+            else
+            {
+                right = null;
+            }
+
+            return;
+        }
+
         if (!hasNewPacket)
             return;
 
         hasNewPacket = false;
         string json = latestJson;
 
-        Packet packet = JsonUtility.FromJson<Packet>(json);
-        left = packet?.left;
-        right = packet?.right;
+        try
+        {
+            Packet packet = JsonUtility.FromJson<Packet>(json);
+            left = packet?.left;
+            right = packet?.right;
 
-        string sender = lastSender != null ? $"{lastSender.Address}:{lastSender.Port}" : "unknown";
-        Debug.Log($"RAW JSON ({sender}): {json}");
+            string sender = lastSender != null ? $"{lastSender.Address}:{lastSender.Port}" : "unknown";
+            Debug.Log($"RAW JSON ({sender}): {json}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to parse JSON: {ex.Message} | raw={json}");
+        }
     }
 
     void OnDestroy()

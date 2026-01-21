@@ -34,6 +34,9 @@ UDP_PORT = int(os.getenv("UDP_PORT", os.getenv("UNITY_PORT", "5052")))
 MAX_HANDS = int(os.getenv("MAX_HANDS", "2"))
 DEBUG = os.getenv("DEBUG", "0") == "1"
 UDP_APPEND_NEWLINE = os.getenv("UDP_APPEND_NEWLINE", "0") == "1"
+SEND_MODE = os.getenv("SEND_MODE", "udp").strip().lower()  # udp | tcp | both
+SEND_UDP = SEND_MODE in {"udp", "both"}
+SEND_TCP = SEND_MODE in {"tcp", "both"}
 
 
 # -----------------------------
@@ -56,10 +59,14 @@ tcp_sock.listen(1)
 
 print("Waiting for Unity camera stream...")
 print(f"Listening TCP on {TCP_IP}:{TCP_PORT}")
-if UDP_IP:
-    print(f"Sending UDP to {UDP_IP}:{UDP_PORT}")
-else:
-    print(f"UDP target IP: auto (use TCP peer) | port={UDP_PORT}")
+print(f"Send mode: {SEND_MODE}")
+if SEND_UDP:
+    if UDP_IP:
+        print(f"Sending UDP to {UDP_IP}:{UDP_PORT}")
+    else:
+        print(f"UDP target IP: auto (use TCP peer) | port={UDP_PORT}")
+if SEND_TCP:
+    print("Sending TCP responses on the same connection")
 
 
 def distance(a, b):
@@ -153,9 +160,22 @@ while True:
 
             packet = {"left": left, "right": right}
             payload = json.dumps(packet)
-            if UDP_APPEND_NEWLINE:
-                payload += "\n"
-            udp_sock.sendto(payload.encode("utf-8"), udp_target)
+
+            if SEND_UDP:
+                udp_payload = payload
+                if UDP_APPEND_NEWLINE:
+                    udp_payload += "\n"
+                udp_sock.sendto(udp_payload.encode("utf-8"), udp_target)
+
+            if SEND_TCP:
+                try:
+                    tcp_bytes = payload.encode("utf-8")
+                    conn.sendall(struct.pack("<I", len(tcp_bytes)))
+                    conn.sendall(tcp_bytes)
+                except OSError:
+                    if DEBUG:
+                        print("TCP send failed; waiting for reconnect...")
+                    break
 
             if DEBUG:
                 frames_sent += 1
@@ -174,7 +194,9 @@ while True:
                     print(
                         " | ".join(
                             [
-                                f"UDP sent={frames_sent} to {udp_target_ip}:{UDP_PORT}",
+                                f"sent={frames_sent} mode={SEND_MODE}",
+                                f"udp={udp_target_ip}:{UDP_PORT}" if SEND_UDP else "udp=off",
+                                "tcp=on" if SEND_TCP else "tcp=off",
                                 f"hands={hands_count}",
                                 f"labels={labels}",
                                 f"seen_any={frames_with_any_hand}",
